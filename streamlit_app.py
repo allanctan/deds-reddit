@@ -5,16 +5,16 @@ from pathlib import Path
 
 # Set the title and favicon that appear in the Browser's tab bar.
 st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
+    page_title='Sentiment Analysis Dashboard',
+    page_icon=':chart_with_upwards_trend:', # This is an emoji shortcode. Could be a URL too.
 )
 
 # -----------------------------------------------------------------------------
 # Declare some useful functions.
 
 @st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+def get_sentiment_data():
+    """Grab sentiment data from a CSV file.
 
     This uses caching to avoid having to read the file every time. If we were
     reading from an HTTP endpoint instead of a file, it's a good idea to set
@@ -22,61 +22,61 @@ def get_gdp_data():
     """
 
     # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+    DATA_FILENAME = Path(__file__).parent/'data/sentiment_data.csv'
+    raw_sentiment_df = pd.read_csv(DATA_FILENAME)
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+    MIN_YEAR = 2020
+    MAX_YEAR = 2024
 
     # The data above has columns like:
-    # - Country Name
-    # - Country Code
+    # - Keyword
+    # - Category
     # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
+    # - Sentiment for 2020
+    # - Sentiment for 2021
+    # - Sentiment for 2022
     # - ...
-    # - GDP for 2022
+    # - Sentiment for 2024
     #
     # ...but I want this instead:
-    # - Country Name
-    # - Country Code
+    # - Keyword
+    # - Category
     # - Year
-    # - GDP
+    # - Sentiment
     #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
+    # So let's pivot all those year-columns into two: Year and Sentiment
+    sentiment_df = raw_sentiment_df.melt(
+        ['Keyword'],
         [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
         'Year',
-        'GDP',
+        'Sentiment',
     )
 
     # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+    sentiment_df['Year'] = pd.to_numeric(sentiment_df['Year'])
 
-    return gdp_df
+    return sentiment_df
 
-gdp_df = get_gdp_data()
+sentiment_df = get_sentiment_data()
 
 # -----------------------------------------------------------------------------
 # Draw the actual page
 
 # Set the title that appears at the top of the page.
 '''
-# :earth_americas: GDP dashboard
+# :chart_with_upwards_trend: Sentiment Analysis Dashboard
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
+Browse sentiment analysis data for various keywords over time. Sentiment scores range from -1 (very negative) 
+to +1 (very positive), with 0 being neutral. This dashboard helps you track how public sentiment toward 
+different topics has evolved.
 '''
 
 # Add some spacing
 ''
 ''
 
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
+min_value = sentiment_df['Year'].min()
+max_value = sentiment_df['Year'].max()
 
 from_year, to_year = st.slider(
     'Which years are you interested in?',
@@ -84,68 +84,74 @@ from_year, to_year = st.slider(
     max_value=max_value,
     value=[min_value, max_value])
 
-countries = gdp_df['Country Code'].unique()
+keywords = sentiment_df['Keyword'].unique()
 
-if not len(countries):
-    st.warning("Select at least one country")
+if not len(keywords):
+    st.warning("Select at least one keyword")
 
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
+selected_keywords = st.multiselect(
+    'Which keywords would you like to view?',
+    keywords,
+    keywords[:6] if len(keywords) >= 6 else keywords)  # Select first 6 keywords by default
 
 ''
 ''
 ''
 
 # Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
+filtered_sentiment_df = sentiment_df[
+    (sentiment_df['Keyword'].isin(selected_keywords))
+    & (sentiment_df['Year'] <= to_year)
+    & (from_year <= sentiment_df['Year'])
 ]
 
-st.header('GDP over time', divider='gray')
+st.header('Sentiment over time', divider='gray')
 
 ''
 
 st.line_chart(
-    filtered_gdp_df,
+    filtered_sentiment_df,
     x='Year',
-    y='GDP',
-    color='Country Code',
+    y='Sentiment',
+    color='Keyword',
 )
 
 ''
 ''
 
 
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
+first_year = sentiment_df[sentiment_df['Year'] == from_year]
+last_year = sentiment_df[sentiment_df['Year'] == to_year]
 
-st.header(f'GDP in {to_year}', divider='gray')
+st.header(f'Sentiment in {to_year}', divider='gray')
 
 ''
 
-cols = st.columns(4)
+for keyword in selected_keywords:
+    first_sentiment = first_year[first_year['Keyword'] == keyword]['Sentiment'].iat[0] if not first_year[first_year['Keyword'] == keyword].empty else float('nan')
+    last_sentiment = last_year[last_year['Keyword'] == keyword]['Sentiment'].iat[0] if not last_year[last_year['Keyword'] == keyword].empty else float('nan')
 
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
+    if math.isnan(first_sentiment) or math.isnan(last_sentiment):
+        change = 'n/a'
+        delta_color = 'off'
+    else:
+        change = f'{last_sentiment - first_sentiment:+.3f}'
+        delta_color = 'normal' if (last_sentiment - first_sentiment) >= 0 else 'inverse'
 
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
+    # Format sentiment score with color coding
+    if not math.isnan(last_sentiment):
+        if last_sentiment > 0.1:
+            sentiment_label = f'{last_sentiment:.3f} (Positive)'
+        elif last_sentiment < -0.1:
+            sentiment_label = f'{last_sentiment:.3f} (Negative)'
         else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
+            sentiment_label = f'{last_sentiment:.3f} (Neutral)'
+    else:
+        sentiment_label = 'n/a'
 
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+    st.metric(
+        label=f'{keyword} Sentiment',
+        value=sentiment_label,
+        delta=change,
+        delta_color=delta_color
+    )
